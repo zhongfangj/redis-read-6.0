@@ -1,0 +1,139 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"projectIndex" : 0,
+					"source" : "."
+				},
+				{
+					"build" : "hiredis",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-hiredis-Debug-dd0a04f292f98fdd8ae9.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.4.0"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "hiredis",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				},
+				{
+					"build" : "linenoise",
+					"jsonFile" : "directory-linenoise-Debug-0c3613437808992f9b94.json",
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "linenoise",
+					"targetIndexes" : 
+					[
+						2
+					]
+				},
+				{
+					"build" : "lua",
+					"jsonFile" : "directory-lua-Debug-caf54f58300e132c6780.json",
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "lua",
+					"targetIndexes" : 
+					[
+						3
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						2,
+						3
+					],
+					"name" : "Project",
+					"targetIndexes" : 
+					[
+						2,
+						3
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1
+					],
+					"name" : "hiredis",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 1,
+					"id" : "hiredis::@f968daf9a14f3eaf15f5",
+					"jsonFile" : "target-hiredis-Debug-63970427759e7ae6dbb4.json",
+					"name" : "hiredis",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "hiredis-test::@f968daf9a14f3eaf15f5",
+					"jsonFile" : "target-hiredis-test-Debug-6728108d8db2a01b2455.json",
+					"name" : "hiredis-test",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "linenoise::@82894e94cecc35cfcc38",
+					"jsonFile" : "target-linenoise-Debug-219c8a0efe686efce710.json",
+					"name" : "linenoise",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 3,
+					"id" : "lua::@084f9cf436f5bfb3cc9c",
+					"jsonFile" : "target-lua-Debug-9184965b9f1099c1cd79.json",
+					"name" : "lua",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/cygdrive/d/0803/redis-read-6.0/deps/cmake-build-debug",
+		"source" : "/cygdrive/d/0803/redis-read-6.0/deps"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 5
+	}
+}
