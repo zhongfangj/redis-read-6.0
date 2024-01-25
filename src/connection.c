@@ -229,7 +229,7 @@ static int connSocketSetWriteHandler(connection *conn, ConnectionCallbackFunc fu
         aeDeleteFileEvent(server.el,conn->fd,AE_WRITABLE);
     else
         if (aeCreateFileEvent(server.el,conn->fd,AE_WRITABLE,
-                    conn->type->ae_handler,conn) == AE_ERR) return C_ERR;
+                    conn->type->ae_handler,conn) == AE_ERR) return C_ERR;  //accept请求进来后，建立连接注册到select上面
     return C_OK;
 }
 
@@ -252,6 +252,7 @@ static const char *connSocketGetLastError(connection *conn) {
     return strerror(conn->last_errno);
 }
 
+/** 处理accept请求  包含 connect ，read ， writer  fzj */
 static void connSocketEventHandler(struct aeEventLoop *el, int fd, void *clientData, int mask)
 {
     UNUSED(el);

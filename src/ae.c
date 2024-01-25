@@ -149,7 +149,9 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-
+/**
+ * 注册连接到select上  @fzj
+ */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -383,6 +385,10 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_BEFORE_SLEEP set, the beforesleep callback is called.
  *
  * The function returns the number of events processed. */
+/**
+ * 当前模式只有一个select  ，连接建立后注册到select上面，当有请求进来时，直接调用对应的handler处理，
+ * 并不会建立新的连接注册到新的select上（所有请求都在一个线程上处理，为了保证顺序问题？）  @fzj
+ */
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
