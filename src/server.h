@@ -251,9 +251,9 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define CLIENT_LUA_DEBUG_SYNC (1<<26)  /* EVAL debugging without fork() */
 #define CLIENT_MODULE (1<<27) /* Non connected client used by some module. */
 #define CLIENT_PROTECTED (1<<28) /* Client should not be freed for now. */
-#define CLIENT_PENDING_READ (1<<29) /* The client has pending reads and was put
-                                       in the list of clients we can read
-                                       from. */
+#define CLIENT_PENDING_READ (1<<29) /** The client has pending reads and was put
+                                       in the list of clients we can read from.
+                                       redis多线程会把待处理客户端放到一个列表中，然后多个线程处理数据解析，会把flag设置为此   */
 #define CLIENT_PENDING_COMMAND (1<<30) /* Used in threaded I/O to signal after
                                           we return single threaded that the
                                           client has already pending commands
@@ -1142,7 +1142,7 @@ struct redisServer {
                                    queries. Will still serve RESP2 queries. */
     int io_threads_num;         /* Number of IO threads to use. */
     int io_threads_do_reads;    /* Read and parse from IO threads? */
-    int io_threads_active;      /* Is IO threads currently active? */
+    int io_threads_active;      /** Is IO threads currently active?     判断是否异步处理客户端请求 ，动态参数，有时候即使设置io_threads_num也会根据系统阻塞情况觉得是否开启  */
     long long events_processed_while_blocked; /* processEventsWhileBlocked() */
 
     /* RDB / AOF loading information */
@@ -1344,7 +1344,7 @@ struct redisServer {
     client *cached_master; /* Cached master to be reused for PSYNC. */
     int repl_syncio_timeout; /* Timeout for synchronous I/O calls */
     int repl_state;          /* Replication status if the instance is a slave */
-    off_t repl_transfer_size; /* Size of RDB to read from master during sync. */
+    off_t repl_transfer_size; /** Size of RDB to read from master during sync.  RDB返回的数据长度 */
     off_t repl_transfer_read; /* Amount of RDB read from master during sync. */
     off_t repl_transfer_last_fsync_off; /* Offset when we fsync-ed last time. */
     connection *repl_transfer_s;     /* Slave -> Master SYNC connection */

@@ -445,6 +445,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             tvp = &tv;
         }
 
+        /** 再阻塞之前调用，如果是多线程模式会处理，客户端请求列表进行数据解析和入库 */
         if (eventLoop->beforesleep != NULL && flags & AE_CALL_BEFORE_SLEEP)
             eventLoop->beforesleep(eventLoop);
 

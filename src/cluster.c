@@ -28,6 +28,14 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ *
+ * clusterCron 集群核心定时任务，集群故障备份投票，孤master分配从节点，节点心跳监控等核心问题，向其他节点同步当前获取到的节点状态，维护集群高可用
+ *
+ *
+ *
+ */
+
 #include "server.h"
 #include "cluster.h"
 #include "endianconv.h"
@@ -51,7 +59,7 @@ int clusterAddNode(clusterNode *node);
 void clusterAcceptHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void clusterReadHandler(connection *conn);
 void clusterSendPing(clusterLink *link, int type);
-void clusterSendFail(char *nodename);
+void clusterSendFail(char *nodename); /** 向其他节点广播  ”nodename“这个节点已经下线了  */
 void clusterSendFailoverAuthIfNeeded(clusterNode *node, clusterMsg *request);
 void clusterUpdateState(void);
 int clusterNodeGetSlotBit(clusterNode *n, int slot);
@@ -439,6 +447,13 @@ int clusterLockConfig(char *filename) {
  * in the "myself" node based on the current configuration of the node,
  * that may change at runtime via CONFIG SET. This function changes the
  * set of flags in myself->flags accordingly. */
+/**
+ * 222222222
+ * 100000000
+ * 011111111
+ * 100000000
+ * 把第九位置为1或者0，当前位置代表是否存在（故障转移 ）
+ */
 void clusterUpdateMyselfFlags(void) {
     int oldflags = myself->flags;
     int nofailover = server.cluster_slave_no_failover ?
@@ -813,6 +828,7 @@ clusterNode *createClusterNode(char *nodename, int flags) {
  * The function returns 0 if it just updates a timestamp of an existing
  * failure report from the same sender. 1 is returned if a new failure
  * report is created. */
+/**   将“sender”添加到报告“failing”节点状态为fail的节点列表*/
 int clusterNodeAddFailureReport(clusterNode *failing, clusterNode *sender) {
     list *l = failing->fail_reports;
     listNode *ln;
@@ -1452,6 +1468,7 @@ void clusterProcessGossipSection(clusterMsg *hdr, clusterLink *link) {
                Handle failure reports, only when the sender is a master. */
             if (sender && nodeIsMaster(sender) && node != myself) {
                 if (flags & (CLUSTER_NODE_FAIL|CLUSTER_NODE_PFAIL)) {
+                    /** 若当前请求节点sender标记该node状态为FAIL或者PFAIL，把该sender加入到fail_reports中  （fail_reports已经报告某node下线的节点列表）*/
                     if (clusterNodeAddFailureReport(node,sender)) {
                         serverLog(LL_VERBOSE,
                             "Node %.40s reported node %.40s as not reachable.",
@@ -3202,8 +3219,8 @@ void clusterHandleSlaveFailover(void) {
     /***
      * 执行以下方法进行自动或手动的故障转移，必须满足以下的条件
      * 1.本节点是slave，
-     * 2.master状态为FAIL，并且现在没有进行故障转移
-     * 3.本节点没有  no failover 配置，并且现在没有进行故障转移
+     * 2.master状态为FAIL，或者现在进行故障转移
+     * 3.本节点没有  no failover 配置，或者现在进行故障转移
      * 4.master的solt不为0
      */
     if (nodeIsMaster(myself) ||
@@ -3628,6 +3645,9 @@ void clusterCron(void) {
     if (handshake_timeout < 1000) handshake_timeout = 1000;
 
     /* Update myself flags. */
+    /**
+     * 判断是否存在故障转移，存在把状态改为故障转移
+     */
     clusterUpdateMyselfFlags();
 
     /* Check if we have disconnected nodes and re-establish the connection.

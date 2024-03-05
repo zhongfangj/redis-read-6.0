@@ -47,7 +47,7 @@ typedef struct clusterLink {
 /* Cluster node flags and macros. */
 #define CLUSTER_NODE_MASTER 1     /* The node is a master */
 #define CLUSTER_NODE_SLAVE 2      /* The node is a slave */
-#define CLUSTER_NODE_PFAIL 4      /* Failure? Need acknowledge */
+#define CLUSTER_NODE_PFAIL 4      /** Failure? Need acknowledge   疑似下线*/
 #define CLUSTER_NODE_FAIL 8       /* The node is believed to be malfunctioning */
 #define CLUSTER_NODE_MYSELF 16    /* This node is myself */
 #define CLUSTER_NODE_HANDSHAKE 32 /* We have still to exchange the first ping */
@@ -136,7 +136,7 @@ typedef struct clusterNode {
     int port;                   /* Latest known clients port of this node */
     int cport;                  /* Latest known cluster port of this node. */
     clusterLink *link;          /* TCP/IP link with this node */
-    list *fail_reports;         /* List of nodes signaling this as failing */
+    list *fail_reports;         /** List of nodes signaling this as failing   已经报告xx节点 pfail的节点的列表 */
 } clusterNode;
 
 typedef struct clusterState {

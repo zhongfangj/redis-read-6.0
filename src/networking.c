@@ -2019,11 +2019,18 @@ void processInputBuffer(client *c) {
             /* If we are in the context of an I/O thread, we can't really
              * execute the command here. All we can do is to flag the client
              * as one that needs to process the command. */
+            /**
+             * 若是通过多线程执行会把所有的请求放到队列里面处理  此时会把状态设置为 CLIENT_PENDING_READ.
+             * 此时第一次进来会把不会执行 processCommandAndResetClient进行数据入库处理，会直接break出去
+             * 此时返回到主线程上，会安装顺序执行保证数据一致性
+             *
+             * */
             if (c->flags & CLIENT_PENDING_READ) {
                 c->flags |= CLIENT_PENDING_COMMAND;
                 break;
             }
 
+            /** 数据入库操作 */
             /* We are finally ready to execute the command. */
             if (processCommandAndResetClient(c) == C_ERR) {
                 /* If the client is no longer valid, we avoid exiting this
@@ -3185,6 +3192,7 @@ void killIOThreads(void) {
     }
 }
 
+/** 设置io_threads_active为1开启多线程处理客户端请求 */
 void startThreadedIO(void) {
     if (tio_debug) { printf("S"); fflush(stdout); }
     if (tio_debug) printf("--- STARTING THREADED IO ---\n");
@@ -3242,6 +3250,11 @@ int handleClientsWithPendingWritesUsingThreads(void) {
     }
 
     /* Start threads if needed. */
+    /**
+     * 其实即使配置了io_threads_num为多线程时，也未必会用多线程去处理客户端请求 。
+     * clients_pending_write 数据必须大于 0，也就是说必须要存在数据阻塞才行
+     *
+     * */
     if (!server.io_threads_active) startThreadedIO();
 
     if (tio_debug) printf("%d TOTAL WRITE pending clients\n", processed);
@@ -3318,6 +3331,7 @@ int handleClientsWithPendingWritesUsingThreads(void) {
  * This is called by the readable handler of the event loop.
  * As a side effect of calling this function the client is put in the
  * pending read clients and flagged as such. */
+/** 多线程处理时，客户端请求存入队列，然后多线程处理客户端 */
 int postponeClientRead(client *c) {
     if (server.io_threads_active &&
         server.io_threads_do_reads &&
@@ -3325,6 +3339,7 @@ int postponeClientRead(client *c) {
         !ProcessingEventsWhileBlocked &&
         !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_PENDING_READ)))
     {
+        /** 状态为CLIENT_PENDING_READ只会处理请求参数不会，进行数据的写入和读取 */
         c->flags |= CLIENT_PENDING_READ;
         listAddNodeHead(server.clients_pending_read,c);
         return 1;
@@ -3339,6 +3354,8 @@ int postponeClientRead(client *c) {
  * the queue using the I/O threads, and process them in order to accumulate
  * the reads in the buffers, and also parse the first command available
  * rendering it in the client structures. */
+
+/** 当redis开启多线程时，处理客户端请求队列，异步处理请求解析，按序进行数据读写，异步将结果返回客户端 */
 int handleClientsWithPendingReadsUsingThreads(void) {
     if (!server.io_threads_active || !server.io_threads_do_reads) return 0;
     int processed = listLength(server.clients_pending_read);
@@ -3371,7 +3388,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     }
 
     /* Also use the main thread to process a slice of clients. */
-    //1.为0的数据由主线程处理
+    //1.为0的数据由主线程处理?  其他的处理保存数据都在一个线程中处理，此处处理0的不会导致数据先后顺序问题吗？
     listRewind(io_threads_list[0],&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);

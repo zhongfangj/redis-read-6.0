@@ -1507,6 +1507,14 @@ void readSyncBulkPayload(connection *conn) {
          * At the end of the file the announced delimiter is transmitted. The
          * delimiter is long and random enough that the probability of a
          * collision with the actual file content can be ignored. */
+
+        /**
+         * 数据传输的两种格式、
+         *
+         * $EOF:<40 bytes delimiter>
+         *
+         * $<count>
+         */
         if (strncmp(buf+1,"EOF:",4) == 0 && strlen(buf+5) >= CONFIG_RUN_ID_SIZE) {
             usemark = 1;
             memcpy(eofmark,buf+5,CONFIG_RUN_ID_SIZE);
@@ -1531,6 +1539,13 @@ void readSyncBulkPayload(connection *conn) {
     if (!use_diskless_load) {
         /* Read the data from the socket, store it to a file and search
          * for the EOF. */
+        /**
+         * 计算读取数据的长度
+         *
+         * $EOF:<40 bytes delimiter>  读取的长度就是总的buf长度
+         *
+         * $<count>  count的长度减去已读取的长度
+         */
         if (usemark) {
             readlen = sizeof(buf);
         } else {
@@ -1573,6 +1588,7 @@ void readSyncBulkPayload(connection *conn) {
         /* Update the last I/O time for the replication transfer (used in
          * order to detect timeouts during replication), and write what we
          * got from the socket to the dump file on disk. */
+        /**  把文件通过文件描述符写入到 dump  */
         server.repl_transfer_lastio = server.unixtime;
         if ((nwritten = write(server.repl_transfer_fd,buf,nread)) != nread) {
             serverLog(LL_WARNING,
