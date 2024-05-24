@@ -2022,7 +2022,7 @@ void processInputBuffer(client *c) {
             /**
              * 若是通过多线程执行会把所有的请求放到队列里面处理  此时会把状态设置为 CLIENT_PENDING_READ.
              * 此时第一次进来会把不会执行 processCommandAndResetClient进行数据入库处理，会直接break出去
-             * 此时返回到主线程上，会安装顺序执行保证数据一致性
+             * 此时返回到主线程上，会按照顺序执行保证数据一致性
              *
              * */
             if (c->flags & CLIENT_PENDING_READ) {
@@ -3389,6 +3389,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
 
     /* Also use the main thread to process a slice of clients. */
     //1.为0的数据由主线程处理?  其他的处理保存数据都在一个线程中处理，此处处理0的不会导致数据先后顺序问题吗？
+    /** 此时只会做数据解析操作， 此时状态为CLIENT_PENDING_READ 调用readQueryFromClient时只会做到数据解析，在数据入库前break出来*/
     listRewind(io_threads_list[0],&li);
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
@@ -3397,7 +3398,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     listEmpty(io_threads_list[0]);
 
     /* Wait for all the other threads to end their work. */
-    /** 等待其他列表里面的数据都处理完，自旋等待 */
+    /** 等待其他列表里面的数据都处理完，自旋等待 ， 存在线程去处理io_threads_list处理完成会把io_threads_pending置为0 */
     while(1) {
         unsigned long pending = 0;
         for (int j = 1; j < server.io_threads_num; j++)
@@ -3408,7 +3409,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
 
     /* Run the list of clients again to process the new buffers. */
 
-    /** 当所有IO线程将clients_pending_read的客户端读IO处理完毕后，在主线程中处理客户端命令 */
+    /** 当所有IO线程将clients_pending_read的客户端读IO处理完毕后，在主线程中处理客户端命令 ，此时状态置为 ~CLIENT_PENDING_READ,按顺序进行入库操作，保持操作一致性 */
     while(listLength(server.clients_pending_read)) {
         ln = listFirst(server.clients_pending_read);
         client *c = listNodeValue(ln);
@@ -3420,12 +3421,14 @@ int handleClientsWithPendingReadsUsingThreads(void) {
          * later when clients are unpaused and we re-queue all clients. */
         if (clientsArePaused()) continue;
 
+        /** 数据入库  ，在数据解析时已经把状态置为  CLIENT_PENDING_COMMAND */
         if (processPendingCommandsAndResetClient(c) == C_ERR) {
             /* If the client is no longer valid, we avoid
              * processing the client later. So we just go
              * to the next. */
             continue;
         }
+        /** 为啥还会调用一次 */
         processInputBuffer(c);
 
         /* We may have pending replies if a thread readQueryFromClient() produced

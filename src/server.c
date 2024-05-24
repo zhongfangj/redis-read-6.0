@@ -1433,6 +1433,7 @@ int htNeedsResize(dict *dict) {
 
 /* If the percentage of used slots in the HT reaches HASHTABLE_MIN_FILL
  * we resize the hash table to save memory */
+/** 使用超过10%则允许扩容 */
 void tryResizeHashTables(int dbid) {
     if (htNeedsResize(server.db[dbid].dict))
         dictResize(server.db[dbid].dict);
@@ -1450,7 +1451,7 @@ void tryResizeHashTables(int dbid) {
 int incrementallyRehash(int dbid) {
     /* Keys dictionary */
     if (dictIsRehashing(server.db[dbid].dict)) {
-        dictRehashMilliseconds(server.db[dbid].dict,1);
+        dictRehashMilliseconds(server.db[dbid].dict,1);//默认执行1秒，超过后等下一次循环
         return 1; /* already used our millisecond for this loop... */
     }
     /* Expires */
@@ -1697,6 +1698,7 @@ void clientsCron(void) {
 /* This function handles 'background' operations we are required to do
  * incrementally in Redis databases, such as active key expiring, resizing,
  * rehashing. */
+/** 过期key删除，hash表扩长 */
 void databasesCron(void) {
     /* Expire keys by random sampling. Not required for slaves
      * as master will synthesize DELs for us. */
@@ -1724,15 +1726,18 @@ void databasesCron(void) {
         int j;
 
         /* Don't test more DBs than we have. */
+        /** 指定扩容前几号数据库 */
         if (dbs_per_call > server.dbnum) dbs_per_call = server.dbnum;
 
         /* Resize */
+        /** 初始化一个新的hashtable ，放在dict的 一号dictht获二号dictht上，具体看实际情况  */
         for (j = 0; j < dbs_per_call; j++) {
             tryResizeHashTables(resize_db % server.dbnum);
             resize_db++;
         }
 
         /* Rehash */
+        /** 对对应的db进行重新hash分配，并非一次成功，设置本次操作的事件，默认1秒，超过时间自动跳出，等待下一次继续 */
         if (server.activerehashing) {
             for (j = 0; j < dbs_per_call; j++) {
                 int work_done = incrementallyRehash(rehash_db);
@@ -1783,6 +1788,7 @@ void checkChildrenDone(void) {
     pid_t pid;
 
     if ((pid = wait3(&statloc,WNOHANG,NULL)) != 0) {
+        /**当前pid的线程终止,处理对应的方法*/
         int exitcode = WEXITSTATUS(statloc);
         int bysignal = 0;
 
@@ -1806,9 +1812,11 @@ void checkChildrenDone(void) {
                 (int) server.aof_child_pid,
                 (int) server.module_child_pid);
         } else if (pid == server.rdb_child_pid) {
+            /** RDB线程终止,修改部分参数状态 */
             backgroundSaveDoneHandler(exitcode,bysignal);
             if (!bysignal && exitcode == 0) receiveChildInfo();
         } else if (pid == server.aof_child_pid) {
+            /** AOF线程终止 */
             backgroundRewriteDoneHandler(exitcode,bysignal);
             if (!bysignal && exitcode == 0) receiveChildInfo();
         } else if (pid == server.module_child_pid) {
@@ -2139,6 +2147,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     handleBlockedClientsTimeout();
 
     /* We should handle pending reads clients ASAP after event loop. */
+    /** 当redis开启多线程时，处理客户端请求队列，异步处理请求解析，按序进行数据读写，异步将结果返回客户端 */
     handleClientsWithPendingReadsUsingThreads();
 
     /* Handle TLS pending data. (must be done before flushAppendOnlyFile) */
@@ -2877,6 +2886,7 @@ void initServer(void) {
 
     createSharedObjects();
     adjustOpenFilesLimit();
+    /** 创建reactor模型 */
     server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
     if (server.el == NULL) {
         serverLog(LL_WARNING,
@@ -2889,6 +2899,7 @@ void initServer(void) {
     /* Open the TCP listening socket for the user commands. */
     server.port = 6389;
 
+    /** 监听端口， */
     if (server.port != 0 &&
         listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)
         exit(1);
@@ -2976,6 +2987,7 @@ void initServer(void) {
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
      * expired keys and so forth. */
+    /** 创建多个维护系统正常运行的定时任务，包含 sentinel，cluster，replication等监控定时任务*/
     if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create event loop timers.");
         exit(1);
@@ -2983,6 +2995,7 @@ void initServer(void) {
 
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
+    /** 把文件描述符绑定到select上 */
     for (j = 0; j < server.ipfd_count; j++) {
         if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
             acceptTcpHandler,NULL) == AE_ERR)
@@ -3051,8 +3064,8 @@ void initServer(void) {
  * Thread Local Storage initialization collides with dlopen call.
  * see: https://sourceware.org/bugzilla/show_bug.cgi?id=19329 */
 void InitServerLast() {
-    bioInit();
-    initThreadedIO();
+    bioInit(); /** 处理队列bio_jobs数据*/
+    initThreadedIO();/** 处理队列 io_threads_list数据*/
     set_jemalloc_bg_thread(server.jemalloc_bg_thread);
     server.initial_memory_usage = zmalloc_used_memory();
 }
@@ -5171,12 +5184,13 @@ int checkForSentinelMode(int argc, char **argv) {
 }
 
 /* Function called at startup to load RDB or AOF file in memory. */
+/** 加载RDB或AOF文件到本地内存中 */
 void loadDataFromDisk(void) {
     long long start = ustime();
     if (server.aof_state == AOF_ON) {
         if (loadAppendOnlyFile(server.aof_filename) == C_OK)
             serverLog(LL_NOTICE,"DB loaded from append only file: %.3f seconds",(float)(ustime()-start)/1000000);
-    } else {
+    } else {//加载RDB文件到redis内存的hashtable中
         rdbSaveInfo rsi = RDB_SAVE_INFO_INIT;
         errno = 0; /* Prevent a stale value from affecting error checking */
         if (rdbLoad(server.rdb_filename,&rsi,RDBFLAGS_NONE) == C_OK) {
@@ -5470,6 +5484,7 @@ int main(int argc, char **argv) {
     }
 
     readOOMScoreAdj();
+    /** 初始化IO模型，绑定端口 */
     initServer();
     if (background || server.pidfile) createPidFile();
     redisSetProcTitle(argv[0]);
@@ -5500,7 +5515,11 @@ int main(int argc, char **argv) {
     #endif /* __linux__ */
         moduleLoadFromQueue();
         ACLLoadUsersAtStartup();
+       /**
+        *异步处理队列bio_jobs, io_threads_list数据
+        */
         InitServerLast();
+        /** 加载RDB或AOF文件到本地内存中 */
         loadDataFromDisk();
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
@@ -5539,6 +5558,7 @@ int main(int argc, char **argv) {
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
 
+    /** 监听处理网络io请求 */
     aeMain(server.el);
     aeDeleteEventLoop(server.el);
     return 0;

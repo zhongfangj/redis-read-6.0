@@ -67,6 +67,7 @@ typedef struct aofrwblock {
 /* This function free the old AOF rewrite buffer if needed, and initialize
  * a fresh new one. It tests for server.aof_rewrite_buf_blocks equal to NULL
  * so can be used for the first initialization as well. */
+/** 删除原AOF文件列表，新建一个 */
 void aofRewriteBufferReset(void) {
     if (server.aof_rewrite_buf_blocks)
         listRelease(server.aof_rewrite_buf_blocks);
@@ -76,6 +77,7 @@ void aofRewriteBufferReset(void) {
 }
 
 /* Return the current size of the AOF rewrite buffer. */
+/** 返回所有的AOF文件的大小 */
 unsigned long aofRewriteBufferSize(void) {
     listNode *ln;
     listIter li;
@@ -92,6 +94,7 @@ unsigned long aofRewriteBufferSize(void) {
 /* Event handler used to send data to the child process doing the AOF
  * rewrite. We send pieces of our AOF differences buffer so that the final
  * write when the child finishes the rewrite will be small. */
+/** 把AOF文件写给child 通过 aof_pipe_write_data_to_child 文件描述符*/
 void aofChildWriteDiffData(aeEventLoop *el, int fd, void *privdata, int mask) {
     listNode *ln;
     aofrwblock *block;
@@ -122,6 +125,7 @@ void aofChildWriteDiffData(aeEventLoop *el, int fd, void *privdata, int mask) {
 }
 
 /* Append data to the AOF rewrite buffer, allocating new blocks if needed. */
+/** 把字符串 “s” 添加到AOF文件中，并且添加监听事件，当aof_pipe_write_data_to_child存在通信，把AOF文件中的数据同步给child */
 void aofRewriteBufferAppend(unsigned char *s, unsigned long len) {
     listNode *ln = listLast(server.aof_rewrite_buf_blocks);
     aofrwblock *block = ln ? ln->value : NULL;
@@ -129,6 +133,7 @@ void aofRewriteBufferAppend(unsigned char *s, unsigned long len) {
     while(len) {
         /* If we already got at least an allocated block, try appending
          * at least some piece into it. */
+        /** 当前AOFblock存在空间，把文件写入到当前block的剩余内存中 */
         if (block) {
             unsigned long thislen = (block->free < len) ? block->free : len;
             if (thislen) {  /* The current block is not already full. */
@@ -139,7 +144,7 @@ void aofRewriteBufferAppend(unsigned char *s, unsigned long len) {
                 len -= thislen;
             }
         }
-
+        /** 当前AOFblock空间不够重新申请空间，写入数据 */
         if (len) { /* First block to allocate, or need another block. */
             int numblocks;
 
@@ -159,7 +164,7 @@ void aofRewriteBufferAppend(unsigned char *s, unsigned long len) {
             }
         }
     }
-
+    /** 监听 aof_pipe_write_data_to_child 上的事件，把数据写给 child  */
     /* Install a file event to send data to the rewrite child if there is
      * not one already. */
     if (!server.aof_stop_sending_diff &&
@@ -173,6 +178,7 @@ void aofRewriteBufferAppend(unsigned char *s, unsigned long len) {
 /* Write the buffer (possibly composed of multiple blocks) into the specified
  * fd. If a short write or any other error happens -1 is returned,
  * otherwise the number of bytes written is returned. */
+/** 把AOF block数据写到给定的文件描述符  ‘fd’ 中 */
 ssize_t aofRewriteBufferWrite(int fd) {
     listNode *ln;
     listIter li;
@@ -235,9 +241,10 @@ void killAppendOnlyChild(void) {
 
 /* Called when the user switches from "appendonly yes" to "appendonly no"
  * at runtime using the CONFIG command. */
+/** 关闭 appendonly 功能  把AOF文件刷新到磁盘上，kill把redis数据写到AOF文件上的线程  */
 void stopAppendOnly(void) {
     serverAssert(server.aof_state != AOF_OFF);
-    flushAppendOnlyFile(1);
+    flushAppendOnlyFile(1);//把文件刷新到AOF磁盘中
     redis_fsync(server.aof_fd);
     close(server.aof_fd);
 
@@ -250,6 +257,7 @@ void stopAppendOnly(void) {
 
 /* Called when the user switches from "appendonly no" to "appendonly yes"
  * at runtime using the CONFIG command. */
+/** 开启APPEND_ONLY功能  创建AOF磁盘文件的文件描述符，把redis数据加载到AOF文件上  */
 int startAppendOnly(void) {
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
     int newfd;
@@ -299,6 +307,7 @@ int startAppendOnly(void) {
  * is likely to fail. However apparently in modern systems this is no longer
  * true, and in general it looks just more resilient to retry the write. If
  * there is an actual error condition we'll get it at the next try. */
+/** 把buf中的数据写入到对应的磁盘中*/
 ssize_t aofWrite(int fd, const char *buf, size_t len) {
     ssize_t nwritten = 0, totwritten = 0;
 
@@ -336,6 +345,7 @@ ssize_t aofWrite(int fd, const char *buf, size_t len) {
  *
  * However if force is set to 1 we'll write regardless of the background
  * fsync. */
+/** 把文件刷新到AOF磁盘中 */
 #define AOF_WRITE_LOG_ERROR_RATE 30 /* Seconds between errors logging. */
 void flushAppendOnlyFile(int force) {
     ssize_t nwritten;
@@ -393,6 +403,7 @@ void flushAppendOnlyFile(int force) {
     }
 
     latencyStartMonitor(latency);
+    /** 把AOF buf中的数据写入到 AOF磁盘文件中 */
     nwritten = aofWrite(server.aof_fd,server.aof_buf,sdslen(server.aof_buf));
     latencyEndMonitor(latency);
     /* We want to capture different events for delayed writes:
@@ -412,6 +423,7 @@ void flushAppendOnlyFile(int force) {
     /* We performed the write so reset the postponed flush sentinel to zero. */
     server.aof_flush_postponed_start = 0;
 
+    /** 把AOF buf中的数据写入到 AOF磁盘文件中失败 ，写少了或者没写成功  */
     if (nwritten != (ssize_t)sdslen(server.aof_buf)) {
         static time_t last_write_error_log = 0;
         int can_log = 0;
@@ -1426,6 +1438,7 @@ werr:
  * log Redis uses variadic commands when possible, such as RPUSH, SADD
  * and ZADD. However at max AOF_REWRITE_ITEMS_PER_CMD items per time
  * are inserted using a single command. */
+/** 用redis内部的数据生成AOF文件到 对应的 ‘filename’上 */
 int rewriteAppendOnlyFile(char *filename) {
     rio aof;
     FILE *fp = NULL;
@@ -1620,6 +1633,7 @@ void aofClosePipes(void) {
  *    finally will rename(2) the temp file in the actual file name.
  *    The the new file is reopened as the new append only file. Profit!
  */
+/** 切出来一个线程去把redis中的数据生成对应的AOF文件*/
 int rewriteAppendOnlyFileBackground(void) {
     pid_t childpid;
 
@@ -1711,6 +1725,7 @@ void aofUpdateCurrentSize(void) {
 
 /* A background append only file rewriting (BGREWRITEAOF) terminated its work.
  * Handle this. */
+/** redis文件同步到AOF文件线程终止的回调函数 */
 void backgroundRewriteDoneHandler(int exitcode, int bysignal) {
     if (!bysignal && exitcode == 0) {
         int newfd, oldfd;

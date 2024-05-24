@@ -1295,7 +1295,7 @@ void markNodeAsFailingIfNeeded(clusterNode *node) {
     int failures;
     int needed_quorum = (server.cluster->size / 2) + 1;
 
-    if (!nodeTimedOut(node)) return; /* We can reach it. */
+    if (!nodeTimedOut(node)) return; /** We can reach it. myself与当前 node可以取得联系，直接返回 */
     if (nodeFailed(node)) return; /* Already FAILing. */
 
     failures = clusterNodeFailureReportsCount(node);
@@ -2548,6 +2548,7 @@ void clusterSetGossipEntry(clusterMsg *hdr, int i, clusterNode *n) {
 /* Send a PING or PONG packet to the specified node, making sure to add enough
  * gossip information. */
 /**发送ping请求的工具方法*/
+/** 发送ping  meet等请求会把当前节点对其他节点状态监控的状态传递过去 */
 void clusterSendPing(clusterLink *link, int type) {
     unsigned char *buf;
     clusterMsg *hdr;
@@ -2645,6 +2646,7 @@ void clusterSendPing(clusterLink *link, int type) {
     }
 
     /* If there are PFAIL nodes, add them at the end. */
+    /** 把myself监控的pfail节点通过ping请求发送给其他节点 */
     if (pfail_wanted) {
         dictIterator *di;
         dictEntry *de;
@@ -3351,6 +3353,7 @@ void clusterHandleSlaveFailover(void) {
         serverLog(LL_WARNING,"Starting a failover election for epoch %llu.",
             (unsigned long long) server.cluster->currentEpoch);
         //请求其他节点投票
+        /** 其他节点收到请求后如果把票投给当前节点会给当前节点发送 CLUSTERMSG_TYPE_FAILOVER_AUTH_ACK类型请求 */
         clusterRequestFailoverAuth();
         server.cluster->failover_auth_sent = 1;
         clusterDoBeforeSleep(CLUSTER_TODO_SAVE_CONFIG|
@@ -3749,13 +3752,13 @@ void clusterCron(void) {
          * is a slave that may migrate to another master. */
         /** 计算node节点的slave数量，并且判读当前node节点是不是孤master */
         if (nodeIsSlave(myself) && nodeIsMaster(node) && !nodeFailed(node)) {
-            /**  判断发生故障的主节点包含多少个没有故障的slave节点 */
+            /**  判断主节点包含多少个没有故障的slave节点 */
             int okslaves = clusterCountNonFailingSlaves(node);
 
             /* A master is orphaned if it is serving a non-zero number of
              * slots, have no working slaves, but used to have at least one
              * slave, or failed over a master that used to have slaves. */
-            /** 如果处于正常状态的从节点数量为0、node负责的slot数量大于0， 并且节点处于CLUSTER_NODE_MIGRATE_TO状态 */
+            /** 如果处于正常状态的slave节点数量为0、node负责的slot数量大于0， 并且节点处于CLUSTER_NODE_MIGRATE_TO状态 */
             if (okslaves == 0 && node->numslots > 0 &&
                 node->flags & CLUSTER_NODE_MIGRATE_TO)
             {
@@ -3796,6 +3799,7 @@ void clusterCron(void) {
          * a too big delay. */
         /**ping_sent为空，代表着没发送过ping请求 ，2倍超时时间 cluster_node_timeout没有发起请求，从新发送ping请求  */
         /** 因为ping请求的发送时，每一秒随机取5个节点，然后找出一个最久没通信的节点 发送ping请求，所以理论上存在很久没通信的节点 */
+        /** 发送ping  meet等请求会把当前节点对其他节点状态监控的状态传递过去 */
         if (node->link &&
             node->ping_sent == 0 &&
             (now - node->pong_received) > server.cluster_node_timeout/2)
@@ -3867,13 +3871,19 @@ void clusterCron(void) {
         clusterHandleManualFailover();
         if (!(server.cluster_module_flags & CLUSTER_MODULE_FLAG_NO_FAILOVER))
             clusterHandleSlaveFailover();//发起投票，票数足够
-            /** 主要功能发起投票，票数足够进行故障转移 */
+            /**  如果当前slave节点 ，发现master为长时间未和当前节点通信，会把这个节点状态设置为PFAIL
+             *   在和其他节点节点状态通信的时候会把master的PFAIL撞他同步给其他节点
+             *   当前节点收到其他节点关于某个节点的状态为PFAIL时，查询其他节点关于这个节点的状态，如果超过一半认为当前节点为pfail会把状态设置为FAIL(参考方法: clusterProcessGossipSection() -->markNodeAsFailingIfNeeded())
+             *   如果当前节点的master节点的状态为FAIL,会发起故障转移
+             *   向其他节点发起故障转移投票 (请求类型:CLUSTERMSG_TYPE_FAILOVER_AUTH_REQUEST,相应类型：CLUSTERMSG_TYPE_FAILOVER_AUTH_ACK  ) ，超过一半节点投票给当前salve节点，这个节点就会开启故障转移。
+             *  故障转移完成当前salve节点变成master会给原集群的salve同步
+             * 主要功能发起投票，票数足够进行故障转移 */
         /* If there are orphaned slaves, and we are a slave among the masters
          * with the max number of non-failing slaves, consider migrating to
          * the orphaned masters. Note that it does not make sense to try
          * a migration if there is no master with at least *two* working
          * slaves. */
-        /** 当集群中存在孤master，并且当前节点的master存在slave节点大于2 ，则进行slave迁移  */
+        /** 当集群中存在孤master，并且当前节点的master存在slave节点大于2且是集群上最多 ，则进行slave迁移  */
         if (orphaned_masters && max_slaves >= 2 && this_slaves == max_slaves)
             clusterHandleSlaveMigration(max_slaves);
     }

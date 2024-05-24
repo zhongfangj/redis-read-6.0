@@ -325,7 +325,7 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
  * to start the next background saving in order to send updates to it. */
 #define SLAVE_STATE_WAIT_BGSAVE_START 6 /* We need to produce a new RDB file. */
 #define SLAVE_STATE_WAIT_BGSAVE_END 7 /* Waiting RDB file creation to finish. */
-#define SLAVE_STATE_SEND_BULK 8 /* Sending RDB file to slave. */
+#define SLAVE_STATE_SEND_BULK 8 /* Sending RDB file to slave.   */
 #define SLAVE_STATE_ONLINE 9 /* RDB file transmitted, sending just updates. */
 
 /* Slave capabilities. */
@@ -434,9 +434,9 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 #define PROPAGATE_REPL 2
 
 /* RDB active child save type. */
-#define RDB_CHILD_TYPE_NONE 0
-#define RDB_CHILD_TYPE_DISK 1     /* RDB is written to disk. */
-#define RDB_CHILD_TYPE_SOCKET 2   /* RDB is written to slave socket. */
+#define RDB_CHILD_TYPE_NONE 0      /**RDB初始换状态*/
+#define RDB_CHILD_TYPE_DISK 1     /** RDB is written to disk.  RDB写文件到磁盘上*/
+#define RDB_CHILD_TYPE_SOCKET 2   /** RDB is written to slave socket.  RDB写文件到slave的socket上*/
 
 /* Keyspace changes notification classes. Every class is associated with a
  * character for configuration purposes. */
@@ -669,7 +669,7 @@ typedef struct clientReplyBlock {
  * by integers from 0 (the default database) up to the max configured
  * database. The database number is the 'id' field in the structure. */
 typedef struct redisDb {
-    dict *dict;                 /* The keyspace for this DB */
+    dict *dict;                 /** The keyspace for this DB  数据存储的地方   */
     dict *expires;              /** Timeout of keys with a timeout set   超时的key */
     dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
     dict *ready_keys;           /* Blocked keys that received a PUSH */
@@ -1233,14 +1233,14 @@ struct redisServer {
     int aof_rewrite_perc;           /* Rewrite AOF if % growth is > M and... */
     off_t aof_rewrite_min_size;     /* the AOF file is at least N bytes. */
     off_t aof_rewrite_base_size;    /* AOF size on latest startup or rewrite. */
-    off_t aof_current_size;         /* AOF current size. */
+    off_t aof_current_size;         /** AOF current size.  磁盘AOF文件大小 */
     off_t aof_fsync_offset;         /* AOF offset which is already synced to disk. */
     int aof_flush_sleep;            /* Micros to sleep before flush. (used by tests) */
     int aof_rewrite_scheduled;      /* Rewrite once BGSAVE terminates. */
-    pid_t aof_child_pid;            /* PID if rewriting process */
-    list *aof_rewrite_buf_blocks;   /* Hold changes during an AOF rewrite. */
+    pid_t aof_child_pid;            /** PID if rewriting process  把redis数据写到AOF文件上的线程id */
+    list *aof_rewrite_buf_blocks;   /** Hold changes during an AOF rewrite. 存放所有的AOF文件的列表，因为性能问题每个AOF文件最大为10M  */
     sds aof_buf;      /* AOF buffer, written before entering the event loop */
-    int aof_fd;       /* File descriptor of currently selected AOF file */
+    int aof_fd;       /** File descriptor of currently selected AOF file  AOF磁盘文件的文件描述符 */
     int aof_selected_db; /* Currently selected DB in AOF */
     time_t aof_flush_postponed_start; /* UNIX time of postponed AOF flush */
     time_t aof_last_fsync;            /* UNIX time of last fsync() */
@@ -1270,7 +1270,7 @@ struct redisServer {
     pid_t rdb_child_pid;            /* PID of RDB saving child */
     struct saveparam *saveparams;   /* Save points array for RDB */
     int saveparamslen;              /* Number of saving points */
-    char *rdb_filename;             /* Name of RDB file */
+    char *rdb_filename;             /** Name of RDB file RDB文件位置   */
     int rdb_compression;            /* Use compression in RDB? */
     int rdb_checksum;               /* Use RDB checksum? */
     int rdb_del_sync_files;         /* Remove RDB files used only for SYNC if
@@ -1330,7 +1330,7 @@ struct redisServer {
     int repl_min_slaves_to_write;   /* Min number of slaves to write. */
     int repl_min_slaves_max_lag;    /* Max lag of <count> slaves to write. */
     int repl_good_slaves_count;     /* Number of slaves with lag <= max_lag. */
-    int repl_diskless_sync;         /* Master send RDB to slaves sockets directly. */
+    int repl_diskless_sync;         /** Master send RDB to slaves sockets directly. 无盘RDB复制 MASTER直接把数据同步给slave ，不先写到磁盘上再同步给master  */
     int repl_diskless_load;         /* Slave parse RDB directly from the socket.
                                      * see REPL_DISKLESS_LOAD_* enum */
     int repl_diskless_sync_delay;   /* Delay to start a diskless repl BGSAVE. */
@@ -1349,7 +1349,7 @@ struct redisServer {
     off_t repl_transfer_last_fsync_off; /* Offset when we fsync-ed last time. */
     connection *repl_transfer_s;     /* Slave -> Master SYNC connection */
     int repl_transfer_fd;    /* Slave -> Master SYNC temp file descriptor */
-    char *repl_transfer_tmpfile; /* Slave-> master SYNC temp file name */
+    char *repl_transfer_tmpfile; /** Slave-> master SYNC temp file name   SLAVE和MASTER数据同步的传递RDB的临时文件 */
     time_t repl_transfer_lastio; /* Unix time of the latest read, for timeout */
     int repl_serve_stale_data; /* Serve stale data when link is down? */
     int repl_slave_ro;          /* Slave is read only? */

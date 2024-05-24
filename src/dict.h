@@ -70,7 +70,7 @@ typedef struct dictType {
 /* This is our hash table structure. Every dictionary has two of this as we
  * implement incremental rehashing, for the old to the new table. */
 typedef struct dictht {
-    dictEntry **table;
+    dictEntry **table;//hash表
     unsigned long size;
     unsigned long sizemask;
     unsigned long used;
@@ -79,7 +79,7 @@ typedef struct dictht {
 typedef struct dict {
     dictType *type;
     void *privdata;
-    dictht ht[2];
+    dictht ht[2]; //每个字段有两个，一个放老的hash表，一个放扩容后的hash表
     long rehashidx; /* rehashing not in progress if rehashidx == -1 */
     unsigned long iterators; /* number of iterators currently running */
 } dict;

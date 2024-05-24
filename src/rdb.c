@@ -1195,6 +1195,7 @@ ssize_t rdbSaveSingleModuleAux(rio *rdb, int when, moduleType *mt) {
  * When the function returns C_ERR and if 'error' is not NULL, the
  * integer pointed by 'error' is set to the value of errno just after the I/O
  * error. */
+/**  REDIS数据写到RDB对应的文件描述符上 （可以是socket也可以时与本地磁盘建立的IO） */
 int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     dictIterator *di = NULL;
     dictEntry *de;
@@ -1209,7 +1210,7 @@ int rdbSaveRio(rio *rdb, int *error, int rdbflags, rdbSaveInfo *rsi) {
     if (rdbWriteRaw(rdb,magic,9) == -1) goto werr;
     if (rdbSaveInfoAuxFields(rdb,rdbflags,rsi) == -1) goto werr;
     if (rdbSaveModulesAux(rdb, REDISMODULE_AUX_BEFORE_RDB) == -1) goto werr;
-
+    /** 1.分别把每一个redis数据库的数据写到RDB中 */
     for (j = 0; j < server.dbnum; j++) {
         redisDb *db = server.db+j;
         dict *d = db->dict;
@@ -1293,6 +1294,8 @@ werr:
  * While the suffix is the 40 bytes hex string we announced in the prefix.
  * This way processes receiving the payload can understand when it ends
  * without doing any processing of the content. */
+/** 把数据通过RDB写入到对应的文件描述符中 */
+/** 只是rdbSaveRio()的包装类   数据格式 ： $EOF:<40 bytes unguessable hex string>\r\n  */
 int rdbSaveRioWithEOFMark(rio *rdb, int *error, rdbSaveInfo *rsi) {
     char eofmark[RDB_EOF_MARK_SIZE];
 
@@ -1302,7 +1305,7 @@ int rdbSaveRioWithEOFMark(rio *rdb, int *error, rdbSaveInfo *rsi) {
     if (rioWrite(rdb,"$EOF:",5) == 0) goto werr;
     if (rioWrite(rdb,eofmark,RDB_EOF_MARK_SIZE) == 0) goto werr;
     if (rioWrite(rdb,"\r\n",2) == 0) goto werr;
-    if (rdbSaveRio(rdb,error,RDBFLAGS_NONE,rsi) == C_ERR) goto werr;
+    if (rdbSaveRio(rdb,error,RDBFLAGS_NONE,rsi) == C_ERR) goto werr; //数据写入到RDB对应的文件描述符中
     if (rioWrite(rdb,eofmark,RDB_EOF_MARK_SIZE) == 0) goto werr;
     stopSaving(1);
     return C_OK;
@@ -1315,6 +1318,7 @@ werr: /* Write error. */
 }
 
 /* Save the DB on disk. Return C_ERR on error, C_OK on success. */
+/**通过RDB把redis的数据先写到rdb_filename磁盘上，*/
 int rdbSave(char *filename, rdbSaveInfo *rsi) {
     char tmpfile[256];
     char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
@@ -1341,12 +1345,12 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
     if (server.rdb_save_incremental_fsync)
         rioSetAutoSync(&rdb,REDIS_AUTOSYNC_BYTES);
 
-    if (rdbSaveRio(&rdb,&error,RDBFLAGS_NONE,rsi) == C_ERR) {
+    if (rdbSaveRio(&rdb,&error,RDBFLAGS_NONE,rsi) == C_ERR) {/**把REDIS数据写到RDB对应的文件描述符上*/
         errno = error;
         goto werr;
     }
 
-    /* Make sure data will not remain on the OS's output buffers */
+    /** Make sure data will not remain on the OS's output buffers 刷新文件描述符，把数据写道磁盘上 */
     if (fflush(fp)) goto werr;
     if (fsync(fileno(fp))) goto werr;
     if (fclose(fp)) { fp = NULL; goto werr; }
@@ -1383,6 +1387,7 @@ werr:
     return C_ERR;
 }
 
+/** 有盘RDB复制,先写到rdb_filename磁盘上，再通过socket写给slave */
 int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     pid_t childpid;
 
@@ -1398,7 +1403,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         /* Child */
         redisSetProcTitle("redis-rdb-bgsave");
         redisSetCpuAffinity(server.bgsave_cpulist);
-        retval = rdbSave(filename,rsi);
+        retval = rdbSave(filename,rsi);/** 先写到rdb_filename磁盘上，*/
         if (retval == C_OK) {
             sendChildCOWInfo(CHILD_TYPE_RDB, "RDB");
         }
@@ -2127,6 +2132,7 @@ void rdbLoadProgressCallback(rio *r, const void *buf, size_t len) {
 
 /* Load an RDB file from the rio stream 'rdb'. On success C_OK is returned,
  * otherwise C_ERR is returned and 'errno' is set accordingly. */
+/**通过RDB中同步数据到服务中 */
 int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     uint64_t dbid;
     int type, rdbver;
@@ -2153,6 +2159,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
     long long lru_idle = -1, lfu_freq = -1, expiretime = -1, now = mstime();
     long long lru_clock = LRU_CLOCK();
 
+    /** RDB 数据解析 */
     while(1) {
         sds key;
         robj *val;
@@ -2328,7 +2335,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             }
         }
 
-        /* Read key */
+        /** Read key 获取key value */
         if ((key = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL)) == NULL)
             goto eoferr;
         /* Read value */
@@ -2355,7 +2362,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
             robj keyobj;
             initStaticStringObject(keyobj,key);
 
-            /* Add the new object in the hash table */
+            /** Add the new object in the hash table  把RDB中获取的数据写道 redis的内存中 */
             int added = dbAddRDBLoad(db,key,val);
             if (!added) {
                 if (rdbflags & RDBFLAGS_ALLOW_DUP) {
@@ -2371,7 +2378,7 @@ int rdbLoadRio(rio *rdb, int rdbflags, rdbSaveInfo *rsi) {
                 }
             }
 
-            /* Set the expire time if needed */
+            /** Set the expire time if needed  设置过期时间 */
             if (expiretime != -1) {
                 setExpire(NULL,db,&keyobj,expiretime);
             }
@@ -2431,6 +2438,7 @@ eoferr:
  *
  * If you pass an 'rsi' structure initialied with RDB_SAVE_OPTION_INIT, the
  * loading code will fiil the information fields in the structure. */
+/**通过RDB中加载数据到filename中的文件到服务中 */
 int rdbLoad(char *filename, rdbSaveInfo *rsi, int rdbflags) {
     FILE *fp;
     rio rdb;
@@ -2439,7 +2447,7 @@ int rdbLoad(char *filename, rdbSaveInfo *rsi, int rdbflags) {
     if ((fp = fopen(filename,"r")) == NULL) return C_ERR;
     startLoadingFile(fp, filename,rdbflags);
     rioInitWithFile(&rdb,fp);
-    retval = rdbLoadRio(&rdb,rdbflags,rsi);
+    retval = rdbLoadRio(&rdb,rdbflags,rsi);/** 加载RDB到到redis的本地内存的hashtable中 */
     fclose(fp);
     stopLoading(retval==C_OK);
     return retval;
@@ -2502,6 +2510,7 @@ static void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
 }
 
 /* When a background RDB saving/transfer terminates, call the right handler. */
+/** 当RDB线程终止,修改部分参数状态 ，释放资源，若为有盘拷贝把生成的RDB文件发送给slave */
 void backgroundSaveDoneHandler(int exitcode, int bysignal) {
     int type = server.rdb_child_type;
     switch(server.rdb_child_type) {
@@ -2522,6 +2531,7 @@ void backgroundSaveDoneHandler(int exitcode, int bysignal) {
     server.rdb_save_time_start = -1;
     /* Possibly there are slaves waiting for a BGSAVE in order to be served
      * (the first stage of SYNC is a bulk transfer of dump.rdb) */
+    /** 当若为有盘拷贝把生成的RDB文件发送给slave */
     updateSlavesWaitingBgsave((!bysignal && exitcode == 0) ? C_OK : C_ERR, type);
 }
 
@@ -2537,6 +2547,7 @@ void killRDBChild(void) {
 
 /* Spawn an RDB child that writes the RDB to the sockets of the slaves
  * that are currently in SLAVE_STATE_WAIT_BGSAVE_START state. */
+/** 无盘RDB复制,直接通过socket写给slave */
 int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     listNode *ln;
     listIter li;
@@ -2578,7 +2589,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         client *slave = ln->value;
         if (slave->replstate == SLAVE_STATE_WAIT_BGSAVE_START) {
             server.rdb_pipe_conns[server.rdb_pipe_numconns++] = slave->conn;
-            replicationSetupSlaveForFullResync(slave,getPsyncInitialOffset());
+            replicationSetupSlaveForFullResync(slave,getPsyncInitialOffset());//slave不支持全量同步，释放连接
         }
     }
 
@@ -2589,12 +2600,13 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         int retval, dummy;
         rio rdb;
 
-        rioInitWithFd(&rdb,rdb_pipe_write);
+        rioInitWithFd(&rdb,rdb_pipe_write);//将写的文件描述符绑定到RDB上
 
         redisSetProcTitle("redis-rdb-to-slaves");
         redisSetCpuAffinity(server.bgsave_cpulist);
 
         retval = rdbSaveRioWithEOFMark(&rdb,NULL,rsi);
+        /** 把RDB中刷到slave中 通过文件描述符*/
         if (retval == C_OK && rioFlush(&rdb) == 0)
             retval = C_ERR;
 

@@ -77,6 +77,14 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     eventLoop->beforesleep = NULL;
     eventLoop->aftersleep = NULL;
     eventLoop->flags = 0;
+
+    /**
+     * 创建reactor模型
+     * select 模式 对应的还存在epoll 模式  evport 模式等
+     * epoll 模式对应实现  ae_epoll.c
+     * evport 模式对应实现为 ae_evport.c
+     *
+     */
     if (aeApiCreate(eventLoop) == -1) goto err;
     /* Events with mask == AE_NONE are not set. So let's initialize the
      * vector with it. */
